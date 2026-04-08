@@ -1,10 +1,12 @@
+```python
 import sys
 import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import FastAPI, HTTPException
-from models import Action, Observation, Reward
+from models import Action, Observation
+
 try:
     from server.email_triage_env_environment import EmailTriageEnv
 except ImportError:
@@ -29,19 +31,22 @@ def home():
     }
 
 
+# ✅ REQUIRED BY EVALUATOR
+@app.post("/openenv/reset", response_model=Observation)
+def openenv_reset():
+    """Reset the environment (required endpoint)."""
+    return env.reset()
+
+
+# (optional - keep if you want local testing)
 @app.get("/reset", response_model=Observation)
 def reset():
-    """Reset the environment and return the first observation."""
-    observation = env.reset()
-    return observation
+    return env.reset()
 
 
 @app.post("/step")
 def step(action: Action):
-    """
-    Take one action and advance the environment.
-    Returns observation, reward, and done flag.
-    """
+    """Take one action and advance the environment."""
     try:
         observation, reward, done, info = env.step(action)
         return {
@@ -56,10 +61,11 @@ def step(action: Action):
 
 @app.get("/state", response_model=Observation)
 def get_state():
-    """Return the current observation without advancing the environment."""
+    """Return current observation without advancing."""
     return env.state()
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=7860)
+```
