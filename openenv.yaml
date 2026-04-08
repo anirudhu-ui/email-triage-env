@@ -1,0 +1,75 @@
+version: "1.0.0"
+name: "EmailTriageEnv"
+description: >
+  A Reinforcement Learning environment that simulates a real-world corporate inbox.
+  An AI agent must triage each email through a strict three-phase pipeline:
+  classification → priority → reply.
+
+entrypoint: "server.app:app"
+
+# ── Observation Space ──────────────────────────────────────────────────────
+observation:
+  email_text:
+    type: str
+    description: "Full text of the current email being processed"
+  step:
+    type: str
+    description: "Current phase: 'classification', 'priority', or 'reply'"
+
+# ── Action Space ───────────────────────────────────────────────────────────
+actions:
+  type:
+    type: str
+    description: "Phase this action belongs to: 'classification', 'priority', or 'reply'"
+  value:
+    type: str
+    description: >
+      Agent's answer for the current phase.
+      classification → one of: spam | important | promotional
+      priority       → one of: low | medium | high
+      reply          → one of: ignore | acknowledge | respond
+
+# ── Reward Structure ───────────────────────────────────────────────────────
+reward:
+  classification:
+    correct: +2
+    wrong:   -1
+  priority:
+    correct: +3
+    wrong:   -1
+  reply:
+    correct: +5
+    wrong:   -2
+
+# ── Tasks ──────────────────────────────────────────────────────────────────
+tasks:
+  - id: "task_easy"
+    name: "Email Classification"
+    difficulty: "easy"
+    description: >
+      Classify each email as spam, important, or promotional.
+      Only the classification phase is evaluated.
+    phases: ["classification"]
+
+  - id: "task_medium"
+    name: "Classification + Priority"
+    difficulty: "medium"
+    description: >
+      Classify each email AND assign the correct priority level (low / medium / high).
+      Both classification and priority phases are evaluated.
+    phases: ["classification", "priority"]
+
+  - id: "task_hard"
+    name: "Full Triage Pipeline"
+    difficulty: "hard"
+    description: >
+      Run the complete triage pipeline for every email:
+      classify it, assign a priority, and decide the reply action
+      (ignore / acknowledge / respond).
+      All three phases are evaluated.
+    phases: ["classification", "priority", "reply"]
+
+# ── Resources ──────────────────────────────────────────────────────────────
+resources:
+  cpu: 2
+  memory: "8Gi"
