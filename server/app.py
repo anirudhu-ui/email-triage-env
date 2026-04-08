@@ -63,7 +63,10 @@ def get_state():
     """Return the current observation without advancing the environment."""
     return env.state()
 
-if __name__ == "__main__":
+def main():
     import uvicorn
-    # Port 7860 is correct for Hugging Face
     uvicorn.run(app, host="0.0.0.0", port=7860)
+
+
+if __name__ == "__main__":
+    main()
