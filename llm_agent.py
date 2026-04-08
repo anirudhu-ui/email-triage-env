@@ -20,10 +20,12 @@ from grader.grader import grade
 # ============================================================
 # 🔑 INSERT YOUR OPENROUTER KEY
 # ============================================================
-
 import os
+from dotenv import load_dotenv
 
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+load_dotenv()
+
+api_key = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
