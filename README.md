@@ -1,4 +1,5 @@
 ---
+
 title: Email Triage Env
 emoji: 📧
 colorFrom: red
@@ -6,108 +7,115 @@ colorTo: purple
 sdk: docker
 pinned: false
 license: apache-2.0
----
+-------------------
 
-# 📧 EmailTriageEnv — OpenEnv Hackathon Submission
+# 📧 EmailTriageEnv — RL-Based AI Email Assistant
 
 A Reinforcement Learning environment that simulates a real-world corporate inbox.
+
 An AI agent triages each email through a strict **three-phase pipeline**:
 
 > **classification → priority → reply**
+
+This project models email triaging as a **sequential decision-making problem**, making it ideal for reinforcement learning research and evaluation.
 
 Built for the **Scaler School of Tech × Meta OpenEnv Hackathon**.
 
 ---
 
 ## 👥 Team (Vardhaman College of Engineering)
-- Devineni Adhyumna Chowdary
-- Anirudh Upadyay
-- Amatul Lubna
+
+* Devineni Adhyumna Chowdary
+* Anirudh Upadyay
+* Amatul Lubna
 
 ---
 
 ## 🎯 Problem Description
 
-Corporate inboxes are noisy. Emails range from phishing attempts to urgent deadlines
-to newsletters nobody asked for. This environment challenges an agent to:
+Corporate inboxes are noisy. Emails range from phishing attempts to urgent deadlines to newsletters nobody asked for.
 
-1. **Classify** each email — is it `spam`, `important`, or `promotional`?
-2. **Prioritize** it — `low`, `medium`, or `high`?
-3. **Decide a reply action** — `ignore`, `acknowledge`, or `respond`?
+This environment challenges an agent to:
 
-The agent must correctly chain all three phases for every email in the inbox.
+1. **Classify** each email — `spam`, `important`, or `promotional`
+2. **Prioritize** it — `low`, `medium`, or `high`
+3. **Decide a reply action** — `ignore`, `acknowledge`, or `respond`
+
+The agent must correctly complete all three phases for every email.
 
 ---
 
-## 🧩 Environment Explanation
-
-The environment runs each email through three sequential phases.
-The agent cannot skip phases or go back — it must answer each phase in order.
+## 🧩 Environment Workflow
 
 ```
 Email 1: [classification] → [priority] → [reply]
 Email 2: [classification] → [priority] → [reply]
 ...
-Email N: [classification] → [priority] → [reply]  →  done=True
+Email N → done=True
 ```
+
+The agent must:
+
+* Follow strict order
+* Cannot skip or revisit steps
 
 ---
 
 ## 👁️ Observation Space
 
-| Field        | Type | Description                                         |
-|--------------|------|-----------------------------------------------------|
-| `email_text` | str  | Full text of the current email being processed      |
-| `step`       | str  | Current phase: `classification`, `priority`, `reply`|
+| Field        | Type | Description                                           |
+| ------------ | ---- | ----------------------------------------------------- |
+| `email_text` | str  | Full email content                                    |
+| `step`       | str  | Current phase (`classification`, `priority`, `reply`) |
 
 ---
 
 ## 🎮 Action Space
 
-| Field   | Type | Description                                                      |
-|---------|------|------------------------------------------------------------------|
-| `type`  | str  | Phase the action belongs to (`classification`/`priority`/`reply`)|
-| `value` | str  | Agent's answer for the current phase (see valid values below)    |
+| Field   | Type | Description                                     |
+| ------- | ---- | ----------------------------------------------- |
+| `type`  | str  | Phase (`classification` / `priority` / `reply`) |
+| `value` | str  | Agent’s decision                                |
 
-**Valid values by phase:**
+### Valid Values
 
-| Phase            | Valid Values                          |
-|------------------|---------------------------------------|
-| `classification` | `spam` · `important` · `promotional`  |
-| `priority`       | `low` · `medium` · `high`             |
-| `reply`          | `ignore` · `acknowledge` · `respond`  |
+| Phase          | Values                         |
+| -------------- | ------------------------------ |
+| classification | spam · important · promotional |
+| priority       | low · medium · high            |
+| reply          | ignore · acknowledge · respond |
 
 ---
 
 ## 🏆 Reward Structure
 
-| Phase            | Correct | Wrong |
-|------------------|---------|-------|
-| `classification` | +2      | -1    |
-| `priority`       | +3      | -1    |
-| `reply`          | +5      | -2    |
+| Phase          | Correct | Wrong |
+| -------------- | ------- | ----- |
+| classification | +2      | -1    |
+| priority       | +3      | -1    |
+| reply          | +5      | -2    |
 
 ---
 
-## 📋 Task Descriptions
+## 📋 Task Difficulty Levels
 
-| Difficulty | Name                     | Phases Evaluated                          |
-|------------|--------------------------|-------------------------------------------|
-| Easy       | Email Classification     | classification only                       |
-| Medium     | Classification + Priority| classification + priority                 |
-| Hard       | Full Triage Pipeline     | classification + priority + reply         |
+| Difficulty | Description               |
+| ---------- | ------------------------- |
+| Easy       | Classification only       |
+| Medium     | Classification + Priority |
+| Hard       | Full pipeline             |
 
 ---
 
 ## 📊 Grader
 
-`grader/grader.py` scores a completed episode with weighted accuracy:
+The grader evaluates performance using weighted accuracy:
 
-| Phase            | Weight |
-|------------------|--------|
-| `classification` | 0.3    |
-| `priority`       | 0.3    |
-| `reply`          | 0.4    |
+| Phase          | Weight |
+| -------------- | ------ |
+| classification | 0.3    |
+| priority       | 0.3    |
+| reply          | 0.4    |
 
 ```python
 from grader.grader import grade
@@ -117,48 +125,79 @@ score = grade({
     "priority": True,
     "reply": False,
 })
-# → 0.6
+# Output: 0.6
 ```
 
 ---
 
-## 🚀 Setup & Running
-
-### Local
+## ▶️ Quick Start
 
 ```bash
 # 1. Install dependencies
-pip install fastapi uvicorn pydantic requests anthropic colorama
+pip install -r requirements.txt
 
-# 2. Run the inference baseline
+# 2. Create .env file
+# (DO NOT push this file to GitHub)
+```
+
+Add inside `.env`:
+
+```
+ANTHROPIC_API_KEY=your_api_key_here
+```
+
+```bash
+# 3. Run baseline agent
 python inference.py
 
-# 3. Run the LLM agent (requires API key)
-export ANTHROPIC_API_KEY=your_key_here
+# 4. Run LLM agent
 python llm_agent.py --compare
 
-# 4. Start the API server
+# 5. Start API server
 uvicorn server.app:app --host 0.0.0.0 --port 7860
 ```
 
-### Docker
+---
 
-```bash
-docker build -t email-triage-env .
-docker run -p 7860:7860 email-triage-env
+## 🔐 Environment Variables
+
+Create a `.env` file in the project root:
+
+```
+ANTHROPIC_API_KEY=your_api_key_here
+```
+
+**⚠️ Note:**
+
+* `.env` is ignored via `.gitignore`
+* Never commit API keys
+
+---
+
+## 🧪 Example Output
+
+```
+Email: "Win a free iPhone!!!"
+
+→ classification: spam ✅
+→ priority: low ✅
+→ reply: ignore ✅
+
+Reward: +10
 ```
 
 ---
 
 ## 🔌 API Endpoints
 
-| Method | Endpoint | Description                              |
-|--------|----------|------------------------------------------|
-| GET    | `/reset` | Reset environment, get first observation |
-| POST   | `/step`  | Submit an action, get next observation   |
-| GET    | `/state` | Get current observation (no advance)     |
+| Method | Endpoint | Description         |
+| ------ | -------- | ------------------- |
+| GET    | `/reset` | Reset environment   |
+| POST   | `/step`  | Submit action       |
+| GET    | `/state` | Current observation |
 
-**Example `/step` request body:**
+### Example Request
+
 ```json
 {
   "type": "classification",
@@ -166,7 +205,8 @@ docker run -p 7860:7860 email-triage-env
 }
 ```
 
-**Example `/step` response:**
+### Example Response
+
 ```json
 {
   "observation": {
@@ -180,27 +220,49 @@ docker run -p 7860:7860 email-triage-env
 
 ---
 
+## 🐳 Docker
+
+```bash
+docker build -t email-triage-env .
+docker run -p 7860:7860 email-triage-env
+```
+
+---
+
 ## 📁 Project Structure
 
 ```
 email_triage_env/
-├── models.py                               # Observation, Action, Reward models
-├── dataset.py                              # 20 emails across easy/medium/hard tiers
-├── inference.py                            # Baseline keyword heuristic agent
-├── llm_agent.py                            # Claude-powered LLM agent
-├── evaluate.py                             # Full evaluation report generator
-├── openenv.yaml                            # OpenEnv config
-├── Dockerfile                              # Docker container (port 7860)
-├── requirements.txt                        # Python dependencies
-├── README.md                               # Project documentation
+├── models.py
+├── dataset.py
+├── inference.py
+├── llm_agent.py
+├── evaluate.py
+├── openenv.yaml
+├── Dockerfile
+├── requirements.txt
+├── README.md
 ├── server/
-│   ├── __init__.py
-│   ├── app.py                              # FastAPI server
-│   └── email_triage_env_environment.py     # Core RL environment logic
+│   ├── app.py
+│   └── email_triage_env_environment.py
 ├── grader/
-│   ├── __init__.py
-│   └── grader.py                           # Deterministic weighted grader
+│   └── grader.py
 └── tasks/
-    ├── __init__.py
-    └── tasks.py                            # Easy/medium/hard task definitions
+    └── tasks.py
 ```
+
+---
+
+## 🚀 Highlights
+
+* ✅ Multi-step RL environment
+* ✅ Realistic email dataset
+* ✅ Deterministic grading system
+* ✅ Baseline + LLM agent comparison
+* ✅ API + Docker support
+
+---
+
+## 📜 License
+
+Apache-2.0
