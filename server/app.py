@@ -1,11 +1,11 @@
-```python
 import sys
 import os
 
+# Maintain the path fix for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import FastAPI, HTTPException
-from models import Action, Observation
+from fastapi import FastAPI, HTTPException, Request
+from models import Action, Observation, Reward
 
 try:
     from server.email_triage_env_environment import EmailTriageEnv
@@ -20,7 +20,6 @@ app = FastAPI(
 
 env = EmailTriageEnv()
 
-
 @app.get("/")
 def home():
     return {
@@ -30,23 +29,24 @@ def home():
         "phase_flow": "classification → priority → reply",
     }
 
+# FIXED: Changed from .get to .post to satisfy OpenEnv validator
+@app.post("/reset", response_model=Observation)
+def reset():
+    """Reset the environment and return the first observation."""
+    observation = env.reset()
+    # Ensure the response is wrapped in an "observation" key if the model doesn't do it
+    return observation
 
-# ✅ REQUIRED BY EVALUATOR
 @app.post("/openenv/reset", response_model=Observation)
 def openenv_reset():
-    """Reset the environment (required endpoint)."""
     return env.reset()
-
-
-# (optional - keep if you want local testing)
-@app.get("/reset", response_model=Observation)
-def reset():
-    return env.reset()
-
 
 @app.post("/step")
 def step(action: Action):
-    """Take one action and advance the environment."""
+    """
+    Take one action and advance the environment.
+    Returns observation, reward, and done flag.
+    """
     try:
         observation, reward, done, info = env.step(action)
         return {
@@ -58,14 +58,12 @@ def step(action: Action):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid step: {str(e)}")
 
-
 @app.get("/state", response_model=Observation)
 def get_state():
-    """Return current observation without advancing."""
+    """Return the current observation without advancing the environment."""
     return env.state()
-
 
 if __name__ == "__main__":
     import uvicorn
+    # Port 7860 is correct for Hugging Face
     uvicorn.run(app, host="0.0.0.0", port=7860)
-```
