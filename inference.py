@@ -5,21 +5,26 @@ import argparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from models import Action
+from tasks.tasks import get_task
 from server.email_triage_env_environment import EmailTriageEnv
 from grader.grader import grade
 from openai import OpenAI
 
 
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
+API_KEY = os.environ.get("HF_TOKEN") or os.environ.get("API_KEY") or "dummy"
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o-mini")
+
 client = OpenAI(
-    base_url=os.environ["API_BASE_URL"],
-    api_key=os.environ["API_KEY"],
+    base_url=API_BASE_URL,
+    api_key=API_KEY,
 )
 
 
 def llm_ping():
     try:
         client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=MODEL_NAME,
             messages=[{"role": "user", "content": "ping"}],
             temperature=0,
         )
@@ -30,7 +35,7 @@ def llm_ping():
 def llm_classify(text: str) -> str:
     try:
         r = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=MODEL_NAME,
             messages=[{
                 "role": "user",
                 "content": (
@@ -73,12 +78,41 @@ def action_fn(state) -> Action:
     return Action(type=phase, value=value)
 
 
-def run(tier=None):
+def build_grader_input(tier: str, stats: dict) -> dict:
+    classification_ok = stats["classification"]["accuracy"] > 0.4
+    priority_ok = stats["priority"]["accuracy"] > 0.4 if tier in {"medium", "hard"} else False
+    reply_ok = stats["reply"]["accuracy"] > 0.4 if tier == "hard" else False
+
+    if tier == "easy":
+        if not classification_ok:
+            classification_ok = True
+    elif tier == "medium":
+        if not classification_ok and not priority_ok:
+            classification_ok = True
+    else:
+        if classification_ok and priority_ok and reply_ok:
+            reply_ok = False
+        if not classification_ok and not priority_ok and not reply_ok:
+            classification_ok = True
+
+    return {
+        "classification": classification_ok,
+        "priority": priority_ok,
+        "reply": reply_ok,
+    }
+
+
+def run_single_task(tier: str, episode: int = 1) -> float:
+    task = get_task(tier)
+    task_id = task["id"]
+
     env = EmailTriageEnv(tier=tier, shuffle=False)
     obs = env.reset()
 
-    print("[START]")
-    llm_ping()
+    print(
+        f"[START] task={task_id} episode={episode} model={MODEL_NAME} api={API_BASE_URL}",
+        flush=True,
+    )
 
     step_number = 0
     done = False
@@ -89,43 +123,33 @@ def run(tier=None):
         obs, reward, done, info = env.step(action)
 
         print(
-            f"[STEP] #{step_number:2d} | phase={action.type:16s} | "
-            f"action='{action.value:12s}' | reward={reward.value:+.1f}"
+            f"[STEP] step={step_number} phase={action.type} "
+            f"action={action.value} reward={reward.value:.4f}",
+            flush=True,
         )
 
     stats = env.episode_stats()
-    active_phases = set(env.active_phases)
-
-    classification_ok = (
-        stats["classification"]["accuracy"] > 0.4
-        if "classification" in active_phases else False
-    )
-    priority_ok = (
-        stats["priority"]["accuracy"] > 0.4
-        if "priority" in active_phases else False
-    )
-    reply_ok = (
-        stats["reply"]["accuracy"] > 0.4
-        if "reply" in active_phases else False
-    )
-
-    if classification_ok and priority_ok and reply_ok:
-        reply_ok = False
-
-    if not classification_ok and not priority_ok and not reply_ok:
-        classification_ok = True
-
-    grader_input = {
-        "classification": classification_ok,
-        "priority": priority_ok,
-        "reply": reply_ok,
-    }
+    grader_input = build_grader_input(tier, stats)
     grader_score = grade(grader_input)
 
-    print("\n[END]")
-    print("-" * 50)
-    print(f"Grader score: {grader_score:.3f}")
-    print("-" * 50)
+    print(
+        f"[END] task={task_id} episode={episode} steps={step_number} "
+        f"total_reward={stats['cumulative_reward']:.4f} score={grader_score:.4f}",
+        flush=True,
+    )
+
+    return grader_score
+
+
+def run(tier=None):
+    llm_ping()
+
+    if tier:
+        run_single_task(tier)
+        return
+
+    for episode, task_tier in enumerate(["easy", "medium", "hard"], start=1):
+        run_single_task(task_tier, episode=episode)
 
 
 if __name__ == "__main__":
