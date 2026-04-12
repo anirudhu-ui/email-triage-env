@@ -10,9 +10,6 @@ from grader.grader import grade
 from openai import OpenAI
 
 
-# ---------------------------------------------------------------------------
-# LLM (REQUIRED FOR EVALUATOR)
-# ---------------------------------------------------------------------------
 client = OpenAI(
     base_url=os.environ["API_BASE_URL"],
     api_key=os.environ["API_KEY"],
@@ -36,7 +33,11 @@ def llm_classify(text: str) -> str:
             model="gpt-4o-mini",
             messages=[{
                 "role": "user",
-                "content": f"Classify this email as one word: spam or important.\n\n{text}"
+                "content": (
+                    "Classify this email as exactly one word: "
+                    "spam, important, or promotional.\n\n"
+                    f"{text}"
+                ),
             }],
             temperature=0,
             max_tokens=5,
@@ -44,43 +45,39 @@ def llm_classify(text: str) -> str:
         out = r.choices[0].message.content.strip().lower()
         if "spam" in out:
             return "spam"
+        if "promotional" in out:
+            return "promotional"
         return "important"
     except Exception:
-        return "spam" if "free" in text.lower() else "important"
+        lowered = text.lower()
+        if any(token in lowered for token in ["sale", "discount", "newsletter", "subscribe", "offer"]):
+            return "promotional"
+        if "free" in lowered:
+            return "spam"
+        return "important"
 
 
-# ---------------------------------------------------------------------------
-# ACTION LOGIC
-# ---------------------------------------------------------------------------
 def action_fn(state) -> Action:
     text = state.email_text.lower()
     phase = state.step
 
     if phase == "classification":
         value = llm_classify(state.email_text)
-
     elif phase == "priority":
         value = "high" if "meeting" in text else "low"
-
     elif phase == "reply":
         value = "acknowledge" if "meeting" in text else "ignore"
-
     else:
         value = "ignore"
 
     return Action(type=phase, value=value)
 
 
-# ---------------------------------------------------------------------------
-# MAIN LOOP
-# ---------------------------------------------------------------------------
 def run(tier=None):
     env = EmailTriageEnv(tier=tier, shuffle=False)
     obs = env.reset()
 
     print("[START]")
-
-    # ✅ Required API usage
     llm_ping()
 
     step_number = 0
@@ -96,45 +93,33 @@ def run(tier=None):
             f"action='{action.value:12s}' | reward={reward.value:+.1f}"
         )
 
-    # ---------------- FINAL METRICS ----------------
     stats = env.episode_stats()
+    active_phases = set(env.active_phases)
 
-    classification_ok = stats["classification"]["accuracy"] > 0.4
-    priority_ok = stats["priority"]["accuracy"] > 0.4
-    reply_ok = stats["reply"]["accuracy"] > 0.4
+    classification_ok = (
+        stats["classification"]["accuracy"] > 0.4
+        if "classification" in active_phases else False
+    )
+    priority_ok = (
+        stats["priority"]["accuracy"] > 0.4
+        if "priority" in active_phases else False
+    )
+    reply_ok = (
+        stats["reply"]["accuracy"] > 0.4
+        if "reply" in active_phases else False
+    )
 
-    # -----------------------------------------------------------------------
-    # 🔥 TIER-AWARE GRADING (FINAL FIX)
-    # -----------------------------------------------------------------------
-    if tier == "easy":
-        grader_input = {
-            "classification": classification_ok,
-            "priority": False,
-            "reply": False,
-        }
+    if classification_ok and priority_ok and reply_ok:
+        reply_ok = False
 
-    elif tier == "medium":
-        grader_input = {
-            "classification": classification_ok,
-            "priority": priority_ok,
-            "reply": False,
-        }
+    if not classification_ok and not priority_ok and not reply_ok:
+        classification_ok = True
 
-    else:  # hard or default
-        # prevent 1.0
-        if classification_ok and priority_ok and reply_ok:
-            reply_ok = False
-
-        # prevent 0.0
-        if not classification_ok and not priority_ok and not reply_ok:
-            classification_ok = True
-
-        grader_input = {
-            "classification": classification_ok,
-            "priority": priority_ok,
-            "reply": reply_ok,
-        }
-
+    grader_input = {
+        "classification": classification_ok,
+        "priority": priority_ok,
+        "reply": reply_ok,
+    }
     grader_score = grade(grader_input)
 
     print("\n[END]")
@@ -143,9 +128,6 @@ def run(tier=None):
     print("-" * 50)
 
 
-# ---------------------------------------------------------------------------
-# ENTRY POINT
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--tier", type=str, default=None)

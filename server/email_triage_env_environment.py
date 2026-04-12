@@ -1,11 +1,11 @@
 import sys
 import os
-import random
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import Observation, Action, Reward
 from dataset import get_dataset
+from tasks.tasks import get_task
 
 PHASES = ["classification", "priority", "reply"]
 
@@ -14,18 +14,19 @@ class EmailTriageEnv:
     """
     OpenEnv RL environment for email triage.
 
-    Phase flow: classification → priority → reply
+    Phase flow: classification -> priority -> reply
     """
 
     def __init__(self, tier: str = None, shuffle: bool = True):
         self.tier = tier
         self.shuffle = shuffle
+        self.active_phases = self._resolve_phases(tier)
         self.emails = []
         self.index: int = 0
-        self.phase: str = PHASES[0]
+        self.phase: str = self.active_phases[0]
         self.cumulative_reward: float = 0.0
         self._correct = {"classification": 0, "priority": 0, "reply": 0}
-        self._total   = {"classification": 0, "priority": 0, "reply": 0}
+        self._total = {"classification": 0, "priority": 0, "reply": 0}
 
     # ----------------------------------------------------------
     # RESET
@@ -33,13 +34,15 @@ class EmailTriageEnv:
 
     def reset(self) -> Observation:
         import random
+
         random.seed(42)
+        self.active_phases = self._resolve_phases(self.tier)
         self.emails = get_dataset(tier=self.tier, shuffle=self.shuffle)
         self.index = 0
-        self.phase = PHASES[0]
+        self.phase = self.active_phases[0]
         self.cumulative_reward = 0.0
         self._correct = {"classification": 0, "priority": 0, "reply": 0}
-        self._total   = {"classification": 0, "priority": 0, "reply": 0}
+        self._total = {"classification": 0, "priority": 0, "reply": 0}
         return self._build_observation()
 
     # ----------------------------------------------------------
@@ -53,18 +56,15 @@ class EmailTriageEnv:
         done = False
         info = {}
 
-        # ✅ SAFE handling (important fix)
         action_type = action.type.strip().lower()
         action_value = action.value.strip().lower()
 
-        # ❌ Wrong phase → penalty
         if action_type != self.phase:
             reward_value = -0.5
             self.cumulative_reward += reward_value
             info = {"error": f"Wrong phase: expected '{self.phase}', got '{action.type}'"}
             return self._build_observation(), Reward(value=reward_value), done, info
 
-        # ---------------- CLASSIFICATION ----------------
         if self.phase == "classification":
             self._total["classification"] += 1
 
@@ -74,9 +74,8 @@ class EmailTriageEnv:
             else:
                 reward_value = -1.0
 
-            self.phase = "priority"
+            done = self._advance_phase()
 
-        # ---------------- PRIORITY ----------------
         elif self.phase == "priority":
             self._total["priority"] += 1
 
@@ -86,9 +85,8 @@ class EmailTriageEnv:
             else:
                 reward_value = -1.0
 
-            self.phase = "reply"
+            done = self._advance_phase()
 
-        # ---------------- REPLY ----------------
         elif self.phase == "reply":
             self._total["reply"] += 1
 
@@ -98,18 +96,10 @@ class EmailTriageEnv:
             else:
                 reward_value = -2.0
 
-            # Move to next email
-            self.index += 1
+            done = self._advance_phase()
 
-            if self.index >= len(self.emails):
-                done = True
-            else:
-                self.phase = "classification"
-
-        # Update reward
         self.cumulative_reward += reward_value
 
-        # Next observation
         if done:
             observation = self._terminal_observation()
         else:
@@ -130,26 +120,26 @@ class EmailTriageEnv:
 
     def episode_stats(self) -> dict:
         def acc(phase):
-            t = self._total[phase]
-            return round(self._correct[phase] / t, 3) if t > 0 else 0.0
+            total = self._total[phase]
+            return round(self._correct[phase] / total, 3) if total > 0 else 0.0
 
         return {
-            "emails_processed":  self.index,
-            "total_emails":      len(self.emails),
+            "emails_processed": self.index,
+            "total_emails": len(self.emails),
             "cumulative_reward": round(self.cumulative_reward, 2),
             "classification": {
-                "correct":  self._correct["classification"],
-                "total":    self._total["classification"],
+                "correct": self._correct["classification"],
+                "total": self._total["classification"],
                 "accuracy": acc("classification"),
             },
             "priority": {
-                "correct":  self._correct["priority"],
-                "total":    self._total["priority"],
+                "correct": self._correct["priority"],
+                "total": self._total["priority"],
                 "accuracy": acc("priority"),
             },
             "reply": {
-                "correct":  self._correct["reply"],
-                "total":    self._total["reply"],
+                "correct": self._correct["reply"],
+                "total": self._total["reply"],
                 "accuracy": acc("reply"),
             },
         }
@@ -172,3 +162,22 @@ class EmailTriageEnv:
             email_text="All emails have been processed.",
             step="done",
         )
+
+    def _resolve_phases(self, tier: str):
+        if tier is None:
+            return PHASES.copy()
+        return list(get_task(tier)["phases"])
+
+    def _advance_phase(self) -> bool:
+        current_index = self.active_phases.index(self.phase)
+        is_last_phase = current_index == len(self.active_phases) - 1
+
+        if not is_last_phase:
+            self.phase = self.active_phases[current_index + 1]
+            return False
+
+        self.index += 1
+        if self.index < len(self.emails):
+            self.phase = self.active_phases[0]
+            return False
+        return True
